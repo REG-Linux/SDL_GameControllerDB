@@ -1,0 +1,150 @@
+# SDL_GameControllerDB Monitor Workflow
+# This workflow monitors the SDL_GameControllerDB repository for updates
+# and automatically processes the database file when changes are detected.
+#
+# Features:
+# - Daily automated checks for repository updates
+# - Filters out unwanted platforms (Windows, Mac OS X, Android, iOS)
+# - Adds custom controller mappings
+# - Removes duplicate entries by GUID
+# - Commits changes automatically
+
+name: SDL_GameControllerDB Monitor
+
+on:
+  # Manual trigger - allows running the workflow on demand
+  workflow_dispatch:
+
+  # Scheduled trigger - runs daily at midnight UTC
+  schedule:
+    - cron: "0 0 * * *" # Daily execution at midnight UTC
+
+  # Push trigger - runs when changes are pushed to main branch
+  push:
+    branches: ["main"]
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+
+    # Required permissions to write to repository
+    permissions:
+      contents: write
+
+    steps:
+      # Step 1: Checkout the current repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch full history
+
+      # Step 2: Get the latest commit from the external repository
+      - name: Get latest commit from external repository
+        id: check-remote
+        run: |
+          # Remote repository URL
+          REMOTE_URL="https://github.com/mdqinc/SDL_GameControllerDB.git"
+
+          # Get the latest commit hash from the remote repository
+          LAST_COMMIT=$(git ls-remote $REMOTE_URL HEAD | awk '{print $1}')
+
+          # Export the commit hash for use in subsequent steps
+          echo "last_commit=$LAST_COMMIT" >> $GITHUB_OUTPUT
+
+          # Log information for debugging
+          echo "Latest commit in $REMOTE_URL: $LAST_COMMIT"
+          echo "Check timestamp: $(date)"
+
+      # Step 3: Check if there are any changes since last run
+      - name: Check for changes
+        id: check-changes
+        run: |
+          # Check if we have a record of the last known commit
+          if [ -f ".last_known_commit" ]; then
+            KNOWN_COMMIT=$(cat .last_known_commit)
+            echo "Last recorded commit: $KNOWN_COMMIT"
+            echo "New commit found: ${{ steps.check-remote.outputs.last_commit }}"
+
+            # Compare commits to detect changes
+            if [ "$KNOWN_COMMIT" != "${{ steps.check-remote.outputs.last_commit }}" ]; then
+              echo "changes_detected=true" >> $GITHUB_OUTPUT
+              echo "🔄 Changes detected in external repository!"
+            else
+              echo "changes_detected=false" >> $GITHUB_OUTPUT
+              echo "✅ No changes found."
+            fi
+          else
+            # First run - no previous commit recorded
+            echo "changes_detected=true" >> $GITHUB_OUTPUT
+            echo "🔍 First run - processing initial setup..."
+          fi
+
+      # Step 4: Process the database file if changes were detected
+      - name: Process database (if changes detected)
+        if: steps.check-changes.outputs.changes_detected == 'true'
+        run: |
+          # Record the new commit hash
+          echo "${{ steps.check-remote.outputs.last_commit }}" > .last_known_commit
+
+          # Clone the external repository
+          if [ -d "SDL_GameControllerDB" ]; then
+            rm -rf SDL_GameControllerDB
+          fi
+          git clone https://github.com/mdqinc/SDL_GameControllerDB.git
+
+          # Process the controller database file
+          cd SDL_GameControllerDB
+
+          # 1. Filter out unwanted platforms
+          # Remove entries for Windows, Mac OS X, Android, iOS and empty lines
+          grep -v -e "Windows" -e "Mac OS X" -e "Android" -e "iOS" -e '^[[:space:]]*$' gamecontrollerdb.txt > filtered.txt
+          echo "✅ Platform filtering completed"
+
+          # 2. Add custom controller mappings
+          # If custom mappings file exists, append it to the filtered database
+          if [ -f "$GITHUB_WORKSPACE/add_gamecontrollerdb.txt" ]; then
+            cat "$GITHUB_WORKSPACE/add_gamecontrollerdb.txt" >> filtered.txt
+            echo "✅ Custom mappings added"
+          fi
+
+          # 3. Remove duplicate entries by GUID
+          # Use awk to keep only the first occurrence of each GUID
+          awk -F',' '!seen[$1]++' filtered.txt > processed.txt
+          echo "✅ Duplicate removal completed"
+
+          # 4. Move the final processed file to the workspace
+          mv processed.txt "$GITHUB_WORKSPACE/gamecontrollerdb.txt"
+
+          # Display final statistics
+          echo "📊 Final statistics:"
+          wc -l "$GITHUB_WORKSPACE/gamecontrollerdb.txt"
+
+          # Commit and push changes to the repository
+          cd "$GITHUB_WORKSPACE"
+
+          # Configure Git user for automated commits
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+          # Stage all changes
+          git add .
+
+          # Check if there are any changes to commit
+          if git diff-index --quiet HEAD --; then
+            echo "⏩ No changes to commit"
+          else
+            # Commit with automated message including date
+            git commit -m "🔄 Automatic update [$(date +'%m/%d/%Y')]"
+            git push
+            echo "🚀 Changes pushed to repository"
+          fi
+
+      # Step 5: Cleanup temporary files
+      - name: Final cleanup
+        run: |
+          # Remove temporary cloned repository
+          if [ -d "SDL_GameControllerDB" ]; then
+            rm -rf SDL_GameControllerDB
+            echo "🧹 Temporary files removed"
+          fi
+          echo "✅ Workflow completed successfully"
