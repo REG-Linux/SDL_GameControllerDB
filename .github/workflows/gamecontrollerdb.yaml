@@ -1,9 +1,11 @@
 # SDL_GameControllerDB Monitor Workflow
 # This workflow monitors the SDL_GameControllerDB repository for updates
 # and automatically processes the database file when changes are detected.
+# Also monitors local add_gamecontrollerdb.txt file for changes.
 #
 # Features:
 # - Daily automated checks for repository updates
+# - Monitors local custom mappings file for changes
 # - Filters out unwanted platforms (Windows, Mac OS X, Android, iOS)
 # - Adds custom controller mappings
 # - Removes duplicate entries by GUID
@@ -22,6 +24,8 @@ on:
   # Push trigger - runs when changes are pushed to main branch
   push:
     branches: ["main"]
+    paths:
+      - "add_gamecontrollerdb.txt" # Trigger when custom mappings file changes
 
 jobs:
   check-and-update:
@@ -55,11 +59,14 @@ jobs:
           echo "Latest commit in $REMOTE_URL: $LAST_COMMIT"
           echo "Check timestamp: $(date)"
 
-      # Step 3: Check if there are any changes since last run
+      # Step 3: Check for changes in external repo and local custom file
       - name: Check for changes
         id: check-changes
         run: |
-          # Check if we have a record of the last known commit
+          CHANGES_DETECTED=false
+          CHANGE_REASONS=""
+
+          # Check external repository changes
           if [ -f ".last_known_commit" ]; then
             KNOWN_COMMIT=$(cat .last_known_commit)
             echo "Last recorded commit: $KNOWN_COMMIT"
@@ -67,22 +74,80 @@ jobs:
 
             # Compare commits to detect changes
             if [ "$KNOWN_COMMIT" != "${{ steps.check-remote.outputs.last_commit }}" ]; then
-              echo "changes_detected=true" >> $GITHUB_OUTPUT
+              CHANGES_DETECTED=true
+              CHANGE_REASONS="External repository updated"
               echo "🔄 Changes detected in external repository!"
-            else
-              echo "changes_detected=false" >> $GITHUB_OUTPUT
-              echo "✅ No changes found."
             fi
           else
             # First run - no previous commit recorded
-            echo "changes_detected=true" >> $GITHUB_OUTPUT
-            echo "🔍 First run - processing initial setup..."
+            CHANGES_DETECTED=true
+            CHANGE_REASONS="First run - initial setup"
+            echo "🆕 First run - processing initial setup..."
+          fi
+
+          # Check if custom mappings file has changed
+          if [ -f "add_gamecontrollerdb.txt" ]; then
+            # Calculate hash of current custom file
+            CURRENT_HASH=$(sha256sum add_gamecontrollerdb.txt | cut -d' ' -f1)
+
+            if [ -f ".last_custom_hash" ]; then
+              KNOWN_HASH=$(cat .last_custom_hash)
+              echo "Last recorded custom file hash: $KNOWN_HASH"
+              echo "Current custom file hash: $CURRENT_HASH"
+
+              if [ "$KNOWN_HASH" != "$CURRENT_HASH" ]; then
+                CHANGES_DETECTED=true
+                if [ -n "$CHANGE_REASONS" ]; then
+                  CHANGE_REASONS="$CHANGE_REASONS + Custom mappings file updated"
+                else
+                  CHANGE_REASONS="Custom mappings file updated"
+                fi
+                echo "🔧 Changes detected in custom mappings file!"
+              fi
+            else
+              # First time seeing this file
+              CHANGES_DETECTED=true
+              if [ -n "$CHANGE_REASONS" ]; then
+                CHANGE_REASONS="$CHANGE_REASONS + Custom mappings file found"
+              else
+                CHANGE_REASONS="Custom mappings file found"
+              fi
+              echo "📁 Custom mappings file found for first time"
+            fi
+
+            # Save current hash for next comparison
+            echo "$CURRENT_HASH" > .last_custom_hash
+          else
+            # No custom file exists
+            if [ -f ".last_custom_hash" ]; then
+              # Custom file was deleted
+              CHANGES_DETECTED=true
+              if [ -n "$CHANGE_REASONS" ]; then
+                CHANGE_REASONS="$CHANGE_REASONS + Custom mappings file removed"
+              else
+                CHANGE_REASONS="Custom mappings file removed"
+              fi
+              echo "🗑️ Custom mappings file was removed!"
+              rm -f .last_custom_hash
+            fi
+          fi
+
+          # Export results
+          echo "changes_detected=$CHANGES_DETECTED" >> $GITHUB_OUTPUT
+          echo "change_reasons=$CHANGE_REASONS" >> $GITHUB_OUTPUT
+
+          if [ "$CHANGES_DETECTED" = "true" ]; then
+            echo "✅ Changes detected: $CHANGE_REASONS"
+          else
+            echo "❌ No changes found."
           fi
 
       # Step 4: Process the database file if changes were detected
       - name: Process database (if changes detected)
         if: steps.check-changes.outputs.changes_detected == 'true'
         run: |
+          echo "🔄 Processing changes: ${{ steps.check-changes.outputs.change_reasons }}"
+
           # Record the new commit hash
           echo "${{ steps.check-remote.outputs.last_commit }}" > .last_known_commit
 
@@ -103,21 +168,26 @@ jobs:
           # 2. Add custom controller mappings
           # If custom mappings file exists, append it to the filtered database
           if [ -f "$GITHUB_WORKSPACE/add_gamecontrollerdb.txt" ]; then
+            echo "📝 Adding custom controller mappings..."
             cat "$GITHUB_WORKSPACE/add_gamecontrollerdb.txt" >> filtered.txt
-            echo "✅ Custom mappings added"
+            echo "✅ Custom mappings added ($(wc -l < "$GITHUB_WORKSPACE/add_gamecontrollerdb.txt") lines)"
+          else
+            echo "ℹ️ No custom mappings file found"
           fi
 
           # 3. Remove duplicate entries by GUID
-          # Use awk to keep only the first occurrence of each GUID
-          awk -F',' '!seen[$1]++' filtered.txt > processed.txt
-          echo "✅ Duplicate removal completed"
+          # Use tac + awk + tac to keep only the LAST occurrence of each GUID
+          # tac reverses the file, awk keeps first occurrence (which is the last in original), tac reverses back
+          tac filtered.txt | awk -F',' '!seen[$1]++' | tac > processed.txt
+          echo "✅ Duplicate removal completed (keeping newest entries)"
 
           # 4. Move the final processed file to the workspace
           mv processed.txt "$GITHUB_WORKSPACE/gamecontrollerdb.txt"
 
           # Display final statistics
           echo "📊 Final statistics:"
-          wc -l "$GITHUB_WORKSPACE/gamecontrollerdb.txt"
+          TOTAL_LINES=$(wc -l < "$GITHUB_WORKSPACE/gamecontrollerdb.txt")
+          echo "Total controller mappings: $TOTAL_LINES"
 
           # Commit and push changes to the repository
           cd "$GITHUB_WORKSPACE"
@@ -126,20 +196,32 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
-          # Stage all changes
+          # Stage all changes (including hash files)
           git add .
 
           # Check if there are any changes to commit
           if git diff-index --quiet HEAD --; then
             echo "⏩ No changes to commit"
           else
-            # Commit with automated message including date
-            git commit -m "🔄 Automatic update [$(date +'%m/%d/%Y')]"
+            # Commit with automated message including date and reason
+            COMMIT_MSG="🔄 Automatic update [$(date +'%m/%d/%Y')] - ${{ steps.check-changes.outputs.change_reasons }}"
+            git commit -m "$COMMIT_MSG"
             git push
             echo "🚀 Changes pushed to repository"
+            echo "📝 Commit message: $COMMIT_MSG"
           fi
 
-      # Step 5: Cleanup temporary files
+      # Step 5: Report status
+      - name: Report status
+        run: |
+          if [ "${{ steps.check-changes.outputs.changes_detected }}" = "true" ]; then
+            echo "✅ Workflow completed successfully - Changes processed"
+            echo "📋 Reason: ${{ steps.check-changes.outputs.change_reasons }}"
+          else
+            echo "✅ Workflow completed successfully - No changes needed"
+          fi
+
+      # Step 6: Cleanup temporary files
       - name: Final cleanup
         run: |
           # Remove temporary cloned repository
@@ -147,4 +229,4 @@ jobs:
             rm -rf SDL_GameControllerDB
             echo "🧹 Temporary files removed"
           fi
-          echo "✅ Workflow completed successfully"
+          echo "🏁 Cleanup completed"
