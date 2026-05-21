@@ -1,0 +1,27 @@
+{
+    "03000000d620000013a7000000010000": {
+        "buttons": {
+            "a": 306,
+            "back": 312,
+            "leftshoulder": 308,
+            "leftstick": 314,
+            "rightshoulder": 309,
+            "rightstick": 315,
+            "start": 313,
+            "y": 304
+        }
+    },
+    "030000006b1d00000401000001010000": {
+        "buttons": {
+            "a": 308,
+            "b": 307,
+            "back": 311,
+            "guide": 311,
+            "leftshoulder": 306,
+            "rightshoulder": 309,
+            "start": 310,
+            "x": 305,
+            "y": 304
+        }
+    }
+}
