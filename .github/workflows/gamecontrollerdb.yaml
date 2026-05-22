@@ -38,7 +38,7 @@ jobs:
     steps:
       # Step 1: Checkout the current repository
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0 # Fetch full history
 
