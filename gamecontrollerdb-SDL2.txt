@@ -1,0 +1,6 @@
+# SDL2-HIDAPI override rows (REG-Linux). Installed as
+# /usr/share/regstation/gamecontrollerdb-SDL2.txt; read only by SDL2 emulators
+# (regmsg appends it last). Each row is the SDL2-flavoured half (dpad-as-
+# buttons b11-14, extras +4, GUID bus 03) of a HIDAPI pair whose SDL3 half
+# (dpad-as-hat) lives in gamecontrollerdb.txt.
+# See package/controllers/gamecontrollerdb/CONTROLLER-MAPPING-DESIGN.md

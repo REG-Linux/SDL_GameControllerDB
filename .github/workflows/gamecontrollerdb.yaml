@@ -6,9 +6,11 @@
 # Features:
 # - Daily automated checks for repository updates
 # - Monitors local custom mappings file for changes
-# - Filters out unwanted platforms (Windows, Mac OS X, Android, iOS)
-# - Adds custom controller mappings
-# - Removes duplicate entries by GUID
+# - Appends custom controller mappings (add_gamecontrollerdb.txt)
+# - Keeps Linux rows only, field-anchored on the platform: token
+# - Splits the SDL2-HIDAPI lane into gamecontrollerdb-SDL2.txt, leaving only
+#   joydev + SDL3-HIDAPI mappings in gamecontrollerdb.txt
+# - Removes duplicate entries by GUID (per lane)
 # - Commits changes automatically
 
 name: SDL_GameControllerDB Monitor
@@ -157,37 +159,66 @@ jobs:
           fi
           git clone https://github.com/mdqinc/SDL_GameControllerDB.git
 
-          # Process the controller database file
+          # Process the controller database into two lanes:
+          #   gamecontrollerdb.txt       — joydev + SDL3-HIDAPI mappings
+          #   gamecontrollerdb-SDL2.txt  — SDL2-HIDAPI mappings (driver-sig 'h',
+          #                                dpad-as-buttons)
+          # See CONTROLLER-MAPPING-DESIGN.md in the REG-Linux tree for the why.
           cd SDL_GameControllerDB
+          WS="$GITHUB_WORKSPACE"
 
-          # 1. Filter out unwanted platforms
-          # Remove entries for Windows, Mac OS X, Android, iOS and empty lines
-          grep -v -e "Windows" -e "Mac OS X" -e "Android" -e "iOS" -e '^[[:space:]]*$' gamecontrollerdb.txt > filtered.txt
-          echo "✅ Platform filtering completed"
-
-          # 2. Add custom controller mappings
-          # If custom mappings file exists, append it to the filtered database
-          if [ -f "$GITHUB_WORKSPACE/add_gamecontrollerdb.txt" ]; then
-            echo "📝 Adding custom controller mappings..."
-            cat "$GITHUB_WORKSPACE/add_gamecontrollerdb.txt" >> filtered.txt
-            echo "✅ Custom mappings added ($(wc -l < "$GITHUB_WORKSPACE/add_gamecontrollerdb.txt") lines)"
+          # 1. Append the custom additions to the upstream DB.
+          cp gamecontrollerdb.txt merged.txt
+          if [ -f "$WS/add_gamecontrollerdb.txt" ]; then
+            echo "📝 Appending custom mappings ($(grep -cE '^[0-9a-fA-F]{32},' "$WS/add_gamecontrollerdb.txt") rows)..."
+            cat "$WS/add_gamecontrollerdb.txt" >> merged.txt
           else
             echo "ℹ️ No custom mappings file found"
           fi
 
-          # 3. Remove duplicate entries by GUID
-          # Use tac + awk + tac to keep only the LAST occurrence of each GUID
-          # tac reverses the file, awk keeps first occurrence (which is the last in original), tac reverses back
-          tac filtered.txt | awk -F',' '!seen[$1]++' | tac > processed.txt
-          echo "✅ Duplicate removal completed (keeping newest entries)"
+          # 2. Keep Linux only, field-anchored on the platform: token. Rows whose
+          #    platform is explicitly Windows/Mac/Android/iOS are dropped; Linux
+          #    rows AND custom rows that omit a platform field are kept. Anchoring
+          #    on ',platform:NAME,' avoids the old fragility of matching those
+          #    words anywhere in a controller name. The leading 32-hex+comma match
+          #    also drops comments and blank lines (a header is re-added below).
+          grep -E '^[0-9a-fA-F]{32},' merged.txt \
+            | grep -vE ',platform:(Windows|Mac OS X|Android|iOS),' > linux.txt
+          echo "✅ Linux filter: $(wc -l < linux.txt) rows"
 
-          # 4. Move the final processed file to the workspace
-          mv processed.txt "$GITHUB_WORKSPACE/gamecontrollerdb.txt"
+          # 3. Split the SDL2-HIDAPI lane from the rest. An SDL2-HIDAPI row has
+          #    driver-sig 'h' (0x68 at GUID chars 29-30) AND presents the dpad as
+          #    buttons; SDL3-HIDAPI uses a hat and joydev uses sig 0 — both stay
+          #    in the main file. Same discriminator the package used to strip with.
+          SDL2_RE='^[0-9a-fA-F]{28}68[0-9a-fA-F]{2},.*dp(up|down|left|right):b'
+          grep -E  "$SDL2_RE" linux.txt > sdl2_lane.txt || true
+          grep -vE "$SDL2_RE" linux.txt > main_lane.txt || true
+
+          # 4. De-duplicate EACH lane by GUID, keeping the last occurrence so a
+          #    custom row overrides an upstream one. Per-lane (not on the merged
+          #    file) so an SDL2-HIDAPI row and its SDL3-HIDAPI sibling — which
+          #    share a GUID over USB — never evict each other.
+          tac main_lane.txt | awk -F',' '!seen[$1]++' | tac > main_dedup.txt
+          tac sdl2_lane.txt | awk -F',' '!seen[$1]++' | tac > sdl2_dedup.txt
+
+          # 5. Emit both files with a generated header.
+          {
+            echo "# Game Controller DB for SDL — REG-Linux (joydev + SDL3-HIDAPI lane)"
+            echo "# Linux only. Generated from mdqinc/SDL_GameControllerDB + add_gamecontrollerdb.txt."
+            echo "# SDL2-HIDAPI mappings live in gamecontrollerdb-SDL2.txt. Do not edit by hand."
+            cat main_dedup.txt
+          } > "$WS/gamecontrollerdb.txt"
+          {
+            echo "# Game Controller DB for SDL — REG-Linux SDL2-HIDAPI lane"
+            echo "# Linux only. Driver-sig 'h', dpad-as-buttons. Appended by regmsgd"
+            echo "# only for SDL2 emulators. Generated — do not edit by hand."
+            cat sdl2_dedup.txt
+          } > "$WS/gamecontrollerdb-SDL2.txt"
 
           # Display final statistics
           echo "📊 Final statistics:"
-          TOTAL_LINES=$(wc -l < "$GITHUB_WORKSPACE/gamecontrollerdb.txt")
-          echo "Total controller mappings: $TOTAL_LINES"
+          echo "gamecontrollerdb.txt (joydev + SDL3-HIDAPI): $(wc -l < main_dedup.txt) mappings"
+          echo "gamecontrollerdb-SDL2.txt (SDL2-HIDAPI):     $(wc -l < sdl2_dedup.txt) mappings"
 
           # Commit and push changes to the repository
           cd "$GITHUB_WORKSPACE"

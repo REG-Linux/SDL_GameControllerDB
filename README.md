@@ -6,18 +6,24 @@ A curated and automatically updated game controller mapping database for Linux p
 
 This repository provides a filtered and enhanced version of the SDL Game Controller Database specifically optimized for Linux gaming. It automatically monitors the upstream repository for updates and maintains a clean, Linux-focused database with custom controller mappings.
 
+The database is published as **two files** so that controllers work correctly with `SDL_JOYSTICK_HIDAPI` enabled under **both SDL2 and SDL3**. The HIDAPI backend numbers a pad differently between the two SDL majors (SDL2 maps the d-pad to buttons, SDL3 to a hat), and over USB the two mappings share a GUID — so they cannot coexist in one file. The workflow therefore splits them:
+
+- **`gamecontrollerdb.txt`** — joydev mappings + SDL3-HIDAPI mappings (the default file).
+- **`gamecontrollerdb-SDL2.txt`** — SDL2-HIDAPI mappings only, loaded *in addition* by SDL2 consumers so they override the colliding SDL3 row.
+
 ## Features
 
-- 🐧 **Linux-focused**: Filtered to include only Linux-compatible controller mappings
+- 🐧 **Linux-focused**: Field-anchored on the `platform:Linux` token (keeps Linux rows and platform-less custom rows; never drops a pad just because its *name* contains "Windows", "Android", etc.)
+- 🎚️ **Two-lane output**: SDL2-HIDAPI mappings split into a separate file so HIDAPI stays usable on both SDL2 and SDL3
 - 🔄 **Auto-updated**: Daily automated checks for upstream changes
 - 🎮 **Custom mappings**: Includes additional controller configurations for specialized hardware
-- 🧹 **Duplicate-free**: Automatically removes duplicate entries by GUID
-- 📊 **Clean format**: Excludes Windows, macOS, Android, and iOS mappings
+- 🧹 **Duplicate-free**: Removes duplicate entries by GUID, per lane (newest wins)
 
 ## Files
 
-- **`gamecontrollerdb.txt`** - The main processed database file ready for use
-- **`add_gamecontrollerdb.txt`** - Custom controller mappings added to the database
+- **`gamecontrollerdb.txt`** - Main database: joydev + SDL3-HIDAPI mappings
+- **`gamecontrollerdb-SDL2.txt`** - SDL2-HIDAPI mappings, loaded in addition by SDL2 consumers
+- **`add_gamecontrollerdb.txt`** - Custom controller mappings, merged in and routed to the correct lane automatically by d-pad style
 - **`.github/workflows/gamecontrollerdb.yaml`** - Automated workflow configuration
 
 ## Supported Controllers
@@ -47,8 +53,12 @@ Download the `gamecontrollerdb.txt` file directly from this repository and place
 int main() {
     SDL_Init(SDL_INIT_GAMECONTROLLER);
 
-    // Load the controller database
+    // Load the controller database. Load the main file first, then — because
+    // this is SDL2 with HIDAPI on — also load the SDL2-HIDAPI lane so its rows
+    // override the colliding SDL3-HIDAPI rows. (An SDL3 app loads only the
+    // main file.)
     SDL_GameControllerAddMappingsFromFile("gamecontrollerdb.txt");
+    SDL_GameControllerAddMappingsFromFile("gamecontrollerdb-SDL2.txt");
 
     // Your game code here
 
@@ -62,10 +72,11 @@ int main() {
 The repository uses GitHub Actions to automatically:
 
 1. **Monitor** the upstream SDL_GameControllerDB repository daily
-2. **Filter** out non-Linux platforms (Windows, macOS, Android, iOS)
-3. **Merge** custom controller mappings from `add_gamecontrollerdb.txt`
-4. **Deduplicate** entries by controller GUID
-5. **Commit** and push updates automatically
+2. **Merge** custom controller mappings from `add_gamecontrollerdb.txt` into the upstream database
+3. **Filter** to Linux only, field-anchored on the `platform:` token (keeps Linux + platform-less custom rows)
+4. **Split** the SDL2-HIDAPI lane (driver-sig `h`, d-pad as buttons) into `gamecontrollerdb-SDL2.txt`; joydev and SDL3-HIDAPI (d-pad as hat) mappings stay in `gamecontrollerdb.txt`
+5. **Deduplicate** each lane by controller GUID (newest wins)
+6. **Commit** and push both files automatically
 
 ### Workflow Features
 
@@ -104,10 +115,10 @@ GUID,Name,a:button,b:button,x:button,y:button,...,platform:Linux,
 
 This database is compatible with:
 
-- SDL2 version 2.0.0 and above
-- Games using SDL2 for input handling
+- SDL2 (2.0.0+) and SDL3 — load `gamecontrollerdb-SDL2.txt` in addition only under SDL2
+- Games using SDL2/SDL3 for input handling
 - Emulators (RetroArch, MAME, etc.)
-- Game engines with SDL2 integration
+- Game engines with SDL integration
 
 ## License
 
