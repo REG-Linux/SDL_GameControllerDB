@@ -68,6 +68,15 @@ jobs:
           CHANGES_DETECTED=false
           CHANGE_REASONS=""
 
+          # Manual dispatch always forces a rebuild, even when the upstream
+          # commit and the custom file are unchanged since the last run, so the
+          # lanes can be regenerated on demand (e.g. after a processing change).
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            CHANGES_DETECTED=true
+            CHANGE_REASONS="Manual dispatch (forced rebuild)"
+            echo "🚀 workflow_dispatch — forcing rebuild"
+          fi
+
           # Check external repository changes
           if [ -f ".last_known_commit" ]; then
             KNOWN_COMMIT=$(cat .last_known_commit)
