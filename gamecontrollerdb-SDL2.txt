@@ -1,6 +1,5 @@
-# SDL2-HIDAPI override rows (REG-Linux). Installed as
-# /usr/share/regstation/gamecontrollerdb-SDL2.txt; read only by SDL2 emulators
-# (regmsg appends it last). Each row is the SDL2-flavoured half (dpad-as-
-# buttons b11-14, extras +4, GUID bus 03) of a HIDAPI pair whose SDL3 half
-# (dpad-as-hat) lives in gamecontrollerdb.txt.
-# See package/controllers/gamecontrollerdb/CONTROLLER-MAPPING-DESIGN.md
+# Game Controller DB for SDL — REG-Linux SDL2-HIDAPI lane
+# Linux only. Driver-sig 'h', dpad-as-buttons. Appended by regmsgd
+# only for SDL2 emulators. Generated — do not edit by hand.
+030000007e0500000920000000026803,Nintendo Switch Pro Controller,a:b1,b:b0,back:b4,dpdown:b12,dpleft:b13,dpright:b14,dpup:b11,guide:b5,leftshoulder:b9,leftstick:b7,lefttrigger:a4,leftx:a0,lefty:a1,rightshoulder:b10,rightstick:b8,righttrigger:a5,rightx:a2,righty:a3,start:b6,x:b3,y:b2,platform:Linux,
+030000004c050000c405000000016800,PS4 Controller,b:b1,a:b0,dpdown:b12,guide:b5,-leftx:-a0,+leftx:+a0,-lefty:-a1,+lefty:+a1,-rightx:-a2,+rightx:+a2,-righty:-a3,+righty:+a3,lefttrigger:+a4,leftstick:b7,dpleft:b13,leftshoulder:b10,rightshoulder:b9,righttrigger:+a5,rightstick:b8,dpright:b14,back:b4,start:b6,dpup:b11,y:b3,x:b2,platform:Linux,
