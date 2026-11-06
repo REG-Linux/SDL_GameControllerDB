@@ -845,3 +845,4 @@
 19009a9a584d00004000000000010000,MagicX Zero 40 Gamepad,a:b0,b:b1,x:b2,y:b3,leftshoulder:b4,rightshoulder:b5,lefttrigger:b6,righttrigger:b7,back:b8,start:b9,guide:b10,leftstick:b11,dpup:b12,dpdown:b13,dpleft:b14,dpright:b15,leftx:a0,lefty:a1,platform:Linux,
 1900db60594d0000300a000000010000,Miyoo A30 Gamepad,a:b0,b:b1,x:b3,y:b2,leftshoulder:b4,rightshoulder:b5,lefttrigger:b6,righttrigger:b7,back:b8,start:b9,guide:b10,dpup:b11,dpdown:b12,dpleft:b13,dpright:b14,leftx:a0,lefty:a1,platform:Linux,
 1900ba66010000000100000000010000,RG280V Gamepad,a:b0,b:b1,y:b2,x:b3,leftshoulder:b4,rightshoulder:b5,lefttrigger:b6,righttrigger:b7,back:b8,guide:b8,start:b9,dpup:b10,dpdown:b11,dpleft:b12,dpright:b13,crc:66ba,platform:Linux,
+190026f3727400006274000000010000,TrimUI Brick Gamepad,a:b0,b:b1,x:b3,y:b2,leftshoulder:b4,rightshoulder:b5,lefttrigger:b6,righttrigger:b7,back:b8,start:b9,guide:b10,leftstick:b11,rightstick:b12,dpup:b13,dpdown:b14,dpleft:b15,dpright:b16,platform:Linux,
