@@ -203,12 +203,15 @@ jobs:
           grep -E  "$SDL2_RE" linux.txt > sdl2_lane.txt || true
           grep -vE "$SDL2_RE" linux.txt > main_lane.txt || true
 
-          # 4. De-duplicate EACH lane by GUID, keeping the last occurrence so a
-          #    custom row overrides an upstream one. Per-lane (not on the merged
+          # 4. De-duplicate EACH lane by GUID + crc, keeping the last occurrence so
+          #    a custom row overrides an upstream one. Per-lane (not on the merged
           #    file) so an SDL2-HIDAPI row and its SDL3-HIDAPI sibling — which
-          #    share a GUID over USB — never evict each other.
-          tac main_lane.txt | awk -F',' '!seen[$1]++' | tac > main_dedup.txt
-          tac sdl2_lane.txt | awk -F',' '!seen[$1]++' | tac > sdl2_dedup.txt
+          #    share a GUID over USB — never evict each other. The crc: field is
+          #    part of the key: a row bound to one device name (crc:XXXX) must not
+          #    evict the generic row other pads with the same GUID fall back to.
+          DEDUP='{ k = $1; if (match($0, /,crc:[0-9a-fA-F]+,/)) k = k tolower(substr($0, RSTART + 5, RLENGTH - 6)); if (!seen[k]++) print }'
+          tac main_lane.txt | awk -F',' "$DEDUP" | tac > main_dedup.txt
+          tac sdl2_lane.txt | awk -F',' "$DEDUP" | tac > sdl2_dedup.txt
 
           # 5. Emit both files with a generated header.
           {
